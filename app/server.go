@@ -52,7 +52,7 @@ func handleConnection(conn net.Conn) {
 		}
 	}(conn)
 
-	_, err := stream.WriteString("HTTP/1.1 200 OK\r\n\r\n")
+	// _, err := stream.WriteString("HTTP/1.1 200 OK\r\n\r\n")
 
 	request, err := parseRequest(stream.Reader)
 
