@@ -16,8 +16,9 @@ var statusCodeToString = map[int]string{
 }
 
 type Request struct {
-	Method string
-	Path   string
+	Method    string
+	Path      string
+	UserAgent string
 }
 
 type Response struct {
@@ -40,7 +41,15 @@ func parseRequest(reader *bufio.Reader) (Request, error) {
 		return Request{}, err
 	}
 
+	_, _ = reader.ReadString('\n')
+	thrd, err := reader.ReadString('\n')
+
 	parts := strings.Split(first, " ")
+
+	if err == nil {
+		return Request{Method: parts[0], Path: parts[1], UserAgent: strings.Split(thrd, " ")[1]}, nil
+	}
+
 	return Request{Method: parts[0], Path: parts[1]}, nil
 }
 
@@ -73,9 +82,13 @@ func handleConnection(conn net.Conn) {
 		match = true
 	}
 
-	if request.Path == "/" || match {
-		if match {
-			response = Response{StatusCode: 200, ContentType: "text/plain", Body: request.Path[6:]}
+	if request.Path == "/" || request.Path == "/user-agent" || match {
+		if match || request.Path == "/user-agent" {
+			body := request.Path[6:]
+			if request.UserAgent != "" {
+				body = request.UserAgent
+			}
+			response = Response{StatusCode: 200, ContentType: "text/plain", Body: body}
 		} else {
 			response = Response{StatusCode: 200}
 		}
