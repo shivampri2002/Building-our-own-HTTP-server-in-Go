@@ -21,13 +21,17 @@ type Request struct {
 }
 
 type Response struct {
-	StatusCode int
-	Body       string
+	StatusCode    int
+	Body          string
+	ContentType   string
+	ContentLength int
 }
 
 func (r Response) String() string {
 	statusText := statusCodeToString[r.StatusCode]
-	return fmt.Sprintf("HTTP/1.1 %d %s\r\n\r\n%s", r.StatusCode, statusText, r.Body)
+	r.ContentLength = len(r.Body)
+
+	return fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", r.StatusCode, statusText, r.ContentType, r.ContentLength, r.Body)
 }
 
 func parseRequest(reader *bufio.Reader) (Request, error) {
@@ -62,8 +66,19 @@ func handleConnection(conn net.Conn) {
 	}
 
 	var response Response
-	if request.Path == "/" {
-		response = Response{StatusCode: 200}
+
+	match := false
+	// fmt.Println(request.Path, request.Path[1:5])
+	if len(request.Path) > 6 && request.Path[1:5] == "echo" {
+		match = true
+	}
+
+	if request.Path == "/" || match {
+		if match {
+			response = Response{StatusCode: 200, ContentType: "text/plain", Body: request.Path[6:]}
+		} else {
+			response = Response{StatusCode: 200}
+		}
 	} else {
 		response = Response{StatusCode: 404}
 	}
