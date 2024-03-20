@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"path/filepath"
+
+	// "io/ioutil"
 
 	// Uncomment this block to pass the first stage
 	"net"
@@ -42,9 +45,8 @@ func (r Response) String() string {
 
 	if r.Headers == nil {
 		r.Headers = make(map[string]string)
+		r.Headers["Content-Type"] = "text/plain"
 	}
-
-	r.Headers["Content-Type"] = "text/plain"
 
 	if _, ok = r.Headers["Content-Length"]; !ok {
 		r.Headers["Content-Length"] = strconv.Itoa(len(r.Body))
@@ -117,7 +119,7 @@ func parseRequest(reader *bufio.Reader) (Request, error) {
 	return request, nil
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, dirName string) {
 	stream := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 
 	defer func(conn net.Conn) {
@@ -167,6 +169,26 @@ func handleConnection(conn net.Conn) {
 	if strings.HasPrefix(request.Path, "/echo") {
 		pathParts := strings.SplitN(request.Path, "/echo/", 2)
 		response.Body = pathParts[1]
+	} else if strings.HasPrefix(request.Path, "/files") && dirName != "" {
+		pathParts := strings.SplitN(request.Path, "/files/", 2)
+
+		filePath := filepath.Join(dirName, pathParts[1])
+		if _, err := os.Stat(filePath); err != nil {
+			response.StatusCode = 404
+		} else {
+			content, err := os.ReadFile(filePath)
+			if err != nil {
+				fmt.Println("Failed to read the requested file: ", err.Error())
+				os.Exit(1)
+			}
+
+			if response.Headers == nil {
+				response.Headers = make(map[string]string)
+				response.Headers["Content-Type"] = "application/octet-stream"
+			}
+
+			response.Body = string(content)
+		}
 	} else if request.Path == "/user-agent" {
 		userAgent := request.Headers["User-Agent"]
 		// fmt.Println(userAgent)
@@ -196,6 +218,12 @@ func main() {
 
 	// Uncomment this block to pass the first stage
 
+	commArgs := os.Args
+	var dirName string
+	if len(commArgs) > 1 && commArgs[1] == "--directory" {
+		dirName = commArgs[2]
+	}
+
 	l, err := net.Listen("tcp", ":4221")
 
 	if err != nil {
@@ -212,7 +240,7 @@ func main() {
 		}
 
 		//spinning a new go routine
-		go handleConnection(conn)
+		go handleConnection(conn, dirName)
 	}
 
 	// defer l.Close()
