@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+
+	// "io/ioutil"
 	"path/filepath"
 
 	// "io/ioutil"
@@ -17,7 +19,9 @@ import (
 
 var statusCodeToString = map[int]string{
 	200: "OK",
+	201: "Created",
 	404: "Not Found",
+	500: "Internal Server Error",
 }
 
 type Request struct {
@@ -119,6 +123,36 @@ func parseRequest(reader *bufio.Reader) (Request, error) {
 	return request, nil
 }
 
+func handleGetFile(filePath string, response *Response) {
+	if _, err := os.Stat(filePath); err != nil {
+		response.StatusCode = 404
+	} else {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Println("Failed to read the requested file: ", err.Error())
+			os.Exit(1)
+		}
+
+		if response.Headers == nil {
+			response.Headers = make(map[string]string)
+			response.Headers["Content-Type"] = "application/octet-stream"
+		}
+
+		response.Body = string(content)
+	}
+}
+
+func handlePostFile(filePath string, response *Response, content string) {
+	err := os.WriteFile(filePath, []byte(content), 0644)
+	if err != nil {
+		fmt.Println("Error in writing to the file: ", err.Error())
+		response.StatusCode = 500
+		return
+	}
+
+	response.StatusCode = 201
+}
+
 func handleConnection(conn net.Conn, dirName string) {
 	stream := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 
@@ -173,21 +207,11 @@ func handleConnection(conn net.Conn, dirName string) {
 		pathParts := strings.SplitN(request.Path, "/files/", 2)
 
 		filePath := filepath.Join(dirName, pathParts[1])
-		if _, err := os.Stat(filePath); err != nil {
-			response.StatusCode = 404
-		} else {
-			content, err := os.ReadFile(filePath)
-			if err != nil {
-				fmt.Println("Failed to read the requested file: ", err.Error())
-				os.Exit(1)
-			}
 
-			if response.Headers == nil {
-				response.Headers = make(map[string]string)
-				response.Headers["Content-Type"] = "application/octet-stream"
-			}
-
-			response.Body = string(content)
+		if request.Method == "GET" {
+			handleGetFile(filePath, &response)
+		} else if request.Method == "POST" {
+			handlePostFile(filePath, &response, request.Body)
 		}
 	} else if request.Path == "/user-agent" {
 		userAgent := request.Headers["User-Agent"]
