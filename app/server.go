@@ -44,6 +44,8 @@ func (r Response) String() string {
 		r.Headers = make(map[string]string)
 	}
 
+	r.Headers["Content-Type"] = "text/plain"
+
 	if _, ok = r.Headers["Content-Length"]; !ok {
 		r.Headers["Content-Length"] = strconv.Itoa(len(r.Body))
 	}
@@ -160,14 +162,14 @@ func handleConnection(conn net.Conn) {
 	// } else {
 	// 	response = Response{StatusCode: 404}
 	// }
-	fmt.Println(request.Path)
+	// fmt.Println(request.Path)
 
 	if strings.HasPrefix(request.Path, "/echo") {
 		pathParts := strings.SplitN(request.Path, "/echo/", 2)
 		response.Body = pathParts[1]
 	} else if request.Path == "/user-agent" {
 		userAgent := request.Headers["User-Agent"]
-		fmt.Printf(userAgent)
+		// fmt.Println(userAgent)
 		response.Body = userAgent
 	} else if request.Path != "/" {
 		response.StatusCode = 404
