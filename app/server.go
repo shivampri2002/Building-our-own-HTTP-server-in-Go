@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 
 	// Uncomment this block to pass the first stage
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -16,41 +18,101 @@ var statusCodeToString = map[int]string{
 }
 
 type Request struct {
-	Method    string
-	Path      string
-	UserAgent string
+	Method string
+	Path   string
+	// UserAgent string
+	Body    string
+	Headers map[string]string
 }
 
 type Response struct {
-	StatusCode    int
-	Body          string
-	ContentType   string
-	ContentLength int
+	StatusCode int
+	Body       string
+	// ContentType   string
+	// ContentLength int
+	Headers map[string]string
 }
 
 func (r Response) String() string {
-	statusText := statusCodeToString[r.StatusCode]
-	r.ContentLength = len(r.Body)
+	statusText, ok := statusCodeToString[r.StatusCode]
+	if !ok {
+		statusText = "Unknown"
+	}
+	// r.Headers["contentLength"] = strconv.Itoa(len(r.Body))
 
-	return fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", r.StatusCode, statusText, r.ContentType, r.ContentLength, r.Body)
+	if r.Headers == nil {
+		r.Headers = make(map[string]string)
+	}
+
+	if _, ok = r.Headers["Content-Length"]; !ok {
+		r.Headers["Content-Length"] = strconv.Itoa(len(r.Body))
+	}
+
+	var headerString strings.Builder
+	for k, v := range r.Headers {
+		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+	}
+
+	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", r.StatusCode, statusText, headerString.String(), r.Body)
 }
 
 func parseRequest(reader *bufio.Reader) (Request, error) {
-	first, err := reader.ReadString('\n')
+	request := Request{
+		Headers: make(map[string]string),
+	}
+
+	firstLine, err := reader.ReadString('\n')
 	if err != nil {
 		return Request{}, err
 	}
 
-	_, _ = reader.ReadString('\n')
-	thrd, err := reader.ReadString('\n')
+	parts := strings.Split(firstLine, " ")
+	request.Method = parts[0]
+	request.Path = parts[1]
 
-	parts := strings.Split(first, " ")
+	// _, _ = reader.ReadString('\n')
+	// thrd, err := reader.ReadString('\n')
 
-	if err == nil {
-		return Request{Method: parts[0], Path: parts[1], UserAgent: strings.Split(thrd, " ")[1]}, nil
+	for {
+		curLine, err := reader.ReadString('\n')
+		if curLine == "\r\n" {
+			break
+		}
+		if err == io.EOF {
+			return request, nil
+		} else if err != nil {
+			return Request{}, err
+		}
+
+		headerParts := strings.SplitN(curLine, ":", 2)
+		request.Headers[headerParts[0]] = strings.TrimSpace(headerParts[1])
 	}
 
-	return Request{Method: parts[0], Path: parts[1]}, nil
+	// if err == nil {
+	// 	return Request{Method: parts[0], Path: parts[1], Headers: map[string]string{
+	// 		"userAgent": strings.Split(thrd, " ")[1],
+	// 	}}, nil
+	// }
+
+	// return Request{Method: parts[0], Path: parts[1]}, nil
+
+	contentLenStr, ok := request.Headers["Content-Length"]
+	if !ok {
+		return request, nil
+	}
+
+	contentLen, _ := strconv.Atoi(contentLenStr)
+
+	buf := make([]byte, contentLen)
+	_, err = io.ReadFull(reader, buf)
+
+	if err != nil {
+		return request, err
+	}
+
+	request.Body = string(buf)
+
+	return request, nil
 }
 
 func handleConnection(conn net.Conn) {
@@ -74,26 +136,41 @@ func handleConnection(conn net.Conn) {
 		os.Exit(1)
 	}
 
-	var response Response
+	// var response Response
+	response := Response{StatusCode: 200}
 
-	match := false
-	// fmt.Println(request.Path, request.Path[1:5])
-	if len(request.Path) > 6 && request.Path[1:5] == "echo" {
-		match = true
-	}
+	// match := false
+	// // fmt.Println(request.Path, request.Path[1:5])
+	// if len(request.Path) > 6 && request.Path[1:5] == "echo" {
+	// 	match = true
+	// }
 
-	if request.Path == "/" || request.Path == "/user-agent" || match {
-		if match || request.Path == "/user-agent" {
-			body := request.Path[6:]
-			if request.UserAgent != "" {
-				body = request.UserAgent
-			}
-			response = Response{StatusCode: 200, ContentType: "text/plain", Body: body}
-		} else {
-			response = Response{StatusCode: 200}
-		}
-	} else {
-		response = Response{StatusCode: 404}
+	// if request.Path == "/" || request.Path == "/user-agent" || match {
+	// 	if match || request.Path == "/user-agent" {
+	// 		body := request.Path[6:]
+	// 		if request.Headers["userAgent"] != "" {
+	// 			body = request.Headers["userAgent"]
+	// 		}
+	// 		response = Response{StatusCode: 200, Headers: map[string]string{
+	// 			"contentType": "text/plain",
+	// 		}, Body: body}
+	// 	} else {
+	// 		response = Response{StatusCode: 200}
+	// 	}
+	// } else {
+	// 	response = Response{StatusCode: 404}
+	// }
+	fmt.Println(request.Path)
+
+	if strings.HasPrefix(request.Path, "/echo") {
+		pathParts := strings.SplitN(request.Path, "/echo/", 2)
+		response.Body = pathParts[1]
+	} else if request.Path == "/user-agent" {
+		userAgent := request.Headers["User-Agent"]
+		fmt.Printf(userAgent)
+		response.Body = userAgent
+	} else if request.Path != "/" {
+		response.StatusCode = 404
 	}
 
 	_, err = stream.WriteString(response.String())
