@@ -211,6 +211,7 @@ func main() {
 			os.Exit(1)
 		}
 
+		//spinning a new go routine
 		go handleConnection(conn)
 	}
 
